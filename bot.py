@@ -41,6 +41,12 @@ logger.setLevel(logging.INFO)
 # Set up internationalization
 setup_i18n()
 
+# Clear any existing proxy settings from environment
+os.environ.pop('HTTP_PROXY', None)
+os.environ.pop('HTTPS_PROXY', None)
+os.environ.pop('http_proxy', None)
+os.environ.pop('https_proxy', None)
+
 # Set the proxy for HTTP and HTTPS if enabled
 if USE_PROXY:
     proxy_url = f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}"
@@ -48,9 +54,6 @@ if USE_PROXY:
     os.environ['HTTPS_PROXY'] = proxy_url
     logger.info(f"Using proxy: {proxy_url}")
 else:
-    # Remove proxy settings if they exist
-    os.environ.pop('HTTP_PROXY', None)
-    os.environ.pop('HTTPS_PROXY', None)
     logger.info("Not using proxy")
 
 class TrainCity(Enum):
@@ -102,19 +105,25 @@ class TelegramBot:
         params = {"offset": offset, "timeout": 100}
         
         # Set up proxies if enabled
-        proxies = None
-        if USE_PROXY:
-            proxies = {
-                'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-                'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-            }
+        proxies = None if not USE_PROXY else {
+            'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+            'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+        }
 
         for _ in range(retries):
             try:
-                response = requests.get(url, params=params, proxies=proxies, timeout=100)
-                logger.info(f"Response content: {response.content}")
-                response.raise_for_status()
-                return response.json().get("result", [])
+                # Create a new session for each request to avoid proxy persistence
+                with requests.Session() as session:
+                    if not USE_PROXY:
+                        # Explicitly set no proxy
+                        session.proxies = {}
+                    else:
+                        session.proxies = proxies
+                    
+                    response = session.get(url, params=params, timeout=100)
+                    logger.info(f"Response content: {response.content}")
+                    response.raise_for_status()
+                    return response.json().get("result", [])
             except RequestException as e:
                 logger.error(f"Error fetching updates: {e}. Retrying...")
                 time.sleep(delay)
@@ -128,10 +137,21 @@ class TelegramBot:
             data["reply_markup"] = reply_markup
 
         try:
-            response = requests.post(url, json=data)
-            logger.info(f"Response content: {response.content}")
-            response.raise_for_status()
-            logger.info(f"Message sent to chat_id {chat_id}.")
+            # Create a new session for each request to avoid proxy persistence
+            with requests.Session() as session:
+                if not USE_PROXY:
+                    # Explicitly set no proxy
+                    session.proxies = {}
+                else:
+                    session.proxies = {
+                        'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+                        'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+                    }
+                
+                response = session.post(url, json=data)
+                logger.info(f"Response content: {response.content}")
+                response.raise_for_status()
+                logger.info(f"Message sent to chat_id {chat_id}.")
         except requests.exceptions.RequestException as e:
             logger.error(f"Error sending message to {chat_id}: {e}")
 
