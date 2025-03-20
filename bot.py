@@ -19,10 +19,14 @@ class TelegramBot:
         """Fetch updates from Telegram with retry logic."""
         url = f"{self.api_url}/getUpdates"
         params = {"offset": offset, "timeout": 100}
+        proxies = {
+            "http": None,
+            "https": None,
+        }
 
         for _ in range(retries):
             try:
-                response = requests.get(url, params=params, timeout=100)
+                response = requests.get(url, params=params, proxies=proxies, timeout=100)
                 response.raise_for_status()  # Raise exception for non-200 responses
                 return response.json().get("result", [])
             except RequestException as e:
