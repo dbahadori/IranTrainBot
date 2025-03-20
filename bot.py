@@ -4,10 +4,10 @@ import threading
 from queue import Queue, Empty
 from datetime import datetime, timedelta
 from enum import Enum
-import pytz  # Add import for timezone support
-
+import pytz
 import requests
 import logging
+import urllib3
 
 from requests import RequestException
 from fuzzywuzzy import fuzz
@@ -24,6 +24,10 @@ from train_scraper import AlibabaTrainScraper
 from flight_scraper import AlibabaFlightScraper
 from utils import get_search_dates
 from i18n_utils import setup_i18n, t, get_language_keyboard, get_language_name
+
+# Disable all proxy settings at urllib3 level
+urllib3.getproxies = lambda: {}
+urllib3.proxy_from_url = lambda url, **kw: None
 
 # Configure logging at the start of the program
 logging.basicConfig(
@@ -42,19 +46,33 @@ logger.setLevel(logging.INFO)
 setup_i18n()
 
 # Clear any existing proxy settings from environment
-os.environ.pop('HTTP_PROXY', None)
-os.environ.pop('HTTPS_PROXY', None)
-os.environ.pop('http_proxy', None)
-os.environ.pop('https_proxy', None)
+for env_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'SOCKS_PROXY', 'socks_proxy', 'NO_PROXY', 'no_proxy']:
+    os.environ.pop(env_var, None)
 
-# Set the proxy for HTTP and HTTPS if enabled
-if USE_PROXY:
+# Configure requests to never use proxy if disabled
+if not USE_PROXY:
+    os.environ['NO_PROXY'] = '*'
+else:
+    # Set the proxy for HTTP and HTTPS if enabled
     proxy_url = f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}"
     os.environ['HTTP_PROXY'] = proxy_url
     os.environ['HTTPS_PROXY'] = proxy_url
     logger.info(f"Using proxy: {proxy_url}")
-else:
-    logger.info("Not using proxy")
+
+def create_session():
+    """Create a requests session with appropriate proxy configuration"""
+    session = requests.Session()
+    session.trust_env = False  # Don't use environment variables for proxy
+    
+    if USE_PROXY:
+        session.proxies = {
+            'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+            'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+        }
+    else:
+        session.proxies = {}  # Empty proxy dict
+    
+    return session
 
 class TrainCity(Enum):
     TEHRAN = {"domainCode": "11320000", "name": "تهران", "value": "THR"}
@@ -103,24 +121,12 @@ class TelegramBot:
         logger.info("Fetching updates with retry logic.")
         url = f"{self.api_url}/getUpdates"
         params = {"offset": offset, "timeout": 100}
-        
-        # Set up proxies if enabled
-        proxies = None if not USE_PROXY else {
-            'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-            'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-        }
 
         for _ in range(retries):
             try:
-                # Create a new session for each request to avoid proxy persistence
-                with requests.Session() as session:
-                    if not USE_PROXY:
-                        # Explicitly set no proxy
-                        session.proxies = {}
-                    else:
-                        session.proxies = proxies
-                    
-                    response = session.get(url, params=params, timeout=100)
+                # Create a new session for each request
+                with create_session() as session:
+                    response = session.get(url, params=params, timeout=100, verify=True)
                     logger.info(f"Response content: {response.content}")
                     response.raise_for_status()
                     return response.json().get("result", [])
@@ -137,18 +143,9 @@ class TelegramBot:
             data["reply_markup"] = reply_markup
 
         try:
-            # Create a new session for each request to avoid proxy persistence
-            with requests.Session() as session:
-                if not USE_PROXY:
-                    # Explicitly set no proxy
-                    session.proxies = {}
-                else:
-                    session.proxies = {
-                        'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-                        'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
-                    }
-                
-                response = session.post(url, json=data)
+            # Create a new session for each request
+            with create_session() as session:
+                response = session.post(url, json=data, verify=True)
                 logger.info(f"Response content: {response.content}")
                 response.raise_for_status()
                 logger.info(f"Message sent to chat_id {chat_id}.")
@@ -639,10 +636,10 @@ class TelegramBot:
                                 )
                         else:
                             self.send_message(
-                            chat_id,
+                                chat_id,
                                 self.translate("search.no_more_items", chat_id),
                                 reply_markup=self.build_menu(chat_id)
-                        )
+                            )
 
                 elif "callback_query" in update:
                     callback_query = update["callback_query"]
