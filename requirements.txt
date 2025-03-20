@@ -1,2 +1,11 @@
-requests
-python-telegram-bot
+annotated-types==0.7.0
+certifi==2025.1.31
+charset-normalizer==3.4.1
+idna==3.10
+pydantic==2.10.6
+pydantic_core==2.27.2
+PyYAML==6.0.2
+requests==2.32.3
+tenacity==9.0.0
+typing_extensions==4.12.2
+urllib3==2.3.0
