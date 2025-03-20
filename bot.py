@@ -20,16 +20,9 @@ class TelegramBot:
         url = f"{self.api_url}/getUpdates"
         params = {"offset": offset, "timeout": 100}
 
-        # Set up the proxies with V2Ray details
-        proxies = {
-            'http': 'http://127.0.0.1:8889',  # HTTP proxy for requests
-            'https': 'https://127.0.0.1:8889',  # HTTPS proxy for requests
-            'socks5': 'socks5h://127.0.0.1:1089',  # SOCKS5 proxy for V2Ray (adjust to your settings)
-        }
-
         for _ in range(retries):
             try:
-                response = requests.get(url, params=params, proxies=proxies, timeout=100)
+                response = requests.get(url, params=params, timeout=100)
                 response.raise_for_status()  # Raise exception for non-200 responses
                 return response.json().get("result", [])
             except RequestException as e:
