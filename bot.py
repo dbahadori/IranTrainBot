@@ -4,6 +4,7 @@ import threading
 from queue import Queue, Empty
 from datetime import datetime, timedelta
 from enum import Enum
+import pytz  # Add import for timezone support
 
 import requests
 import logging
@@ -11,18 +12,46 @@ import logging
 from requests import RequestException
 from fuzzywuzzy import fuzz
 
-from config import TELEGRAM_BOT_TOKEN
+from config import (
+    TELEGRAM_BOT_TOKEN,
+    USE_PROXY,
+    PROXY_HOST,
+    PROXY_PORT,
+    PROXY_TYPE,
+    DEFAULT_SEARCH_DAYS
+)
 from train_scraper import AlibabaTrainScraper
 from flight_scraper import AlibabaFlightScraper
 from utils import get_search_dates
 from i18n_utils import setup_i18n, t, get_language_keyboard, get_language_name
 
+# Configure logging at the start of the program
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Output to console
+        logging.FileHandler('bot.log')  # Also save to a file
+    ]
+)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 # Set up internationalization
 setup_i18n()
 
-# Set the proxy for HTTP and HTTPS using SOCKS5
-os.environ['HTTP_PROXY'] = 'socks5h://localhost:1089'
-os.environ['HTTPS_PROXY'] = 'socks5h://localhost:1089'
+# Set the proxy for HTTP and HTTPS if enabled
+if USE_PROXY:
+    proxy_url = f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}"
+    os.environ['HTTP_PROXY'] = proxy_url
+    os.environ['HTTPS_PROXY'] = proxy_url
+    logger.info(f"Using proxy: {proxy_url}")
+else:
+    # Remove proxy settings if they exist
+    os.environ.pop('HTTP_PROXY', None)
+    os.environ.pop('HTTPS_PROXY', None)
+    logger.info("Not using proxy")
 
 class TrainCity(Enum):
     TEHRAN = {"domainCode": "11320000", "name": "تهران", "value": "THR"}
@@ -40,8 +69,6 @@ class TelegramBot:
     def __init__(self, token):
         self.token = token
         self.api_url = f"https://api.telegram.org/bot{self.token}"
-        logging.basicConfig(level=logging.INFO)
-        logging.info("Initialized TelegramBot with token.")
         self.availability_queue = Queue()
         self.stop_event = threading.Event()
         self.reset_event = threading.Event()
@@ -50,11 +77,16 @@ class TelegramBot:
         self.waiting_for_more = {}  # Track waiting state per user
         self.user_languages = {}  # Store user language preferences
 
+        # Get current time in Tehran timezone
+        tehran_tz = pytz.timezone('Asia/Tehran')
+        current_time = datetime.now(tehran_tz)
+        
         # Add attributes to store user inputs
         self.origin = "THR"
         self.destination = "SYZ"
-        self.start_date = "2025-03-20"
-        self.end_date = "2025-03-26"
+        self.start_date = current_time.strftime("%Y-%m-%d")
+        self.end_date = (current_time + timedelta(days=DEFAULT_SEARCH_DAYS)).strftime("%Y-%m-%d")
+        logger.info(f"Bot initialized with token. Date range: {self.start_date} to {self.end_date} (Tehran timezone)")
 
     def get_user_language(self, chat_id):
         """Get the user's preferred language, defaulting to Farsi."""
@@ -65,27 +97,31 @@ class TelegramBot:
         return t(key, locale=self.get_user_language(chat_id), **kwargs)
 
     def get_updates_with_retry(self, offset=None, retries=3, delay=5):
-        logging.info("Fetching updates with retry logic.")
+        logger.info("Fetching updates with retry logic.")
         url = f"{self.api_url}/getUpdates"
         params = {"offset": offset, "timeout": 100}
-        proxies = {
-            'http': 'socks5h://127.0.0.1:1089',
-            'https': 'socks5h://127.0.0.1:1089',
-        }
+        
+        # Set up proxies if enabled
+        proxies = None
+        if USE_PROXY:
+            proxies = {
+                'http': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+                'https': f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}",
+            }
 
         for _ in range(retries):
             try:
                 response = requests.get(url, params=params, proxies=proxies, timeout=100)
-                logging.info(f"Response content: {response.content}")
+                logger.info(f"Response content: {response.content}")
                 response.raise_for_status()
                 return response.json().get("result", [])
             except RequestException as e:
-                logging.error(f"Error fetching updates: {e}. Retrying...")
+                logger.error(f"Error fetching updates: {e}. Retrying...")
                 time.sleep(delay)
         return []
 
     def send_message(self, chat_id, text, reply_markup=None):
-        logging.info(f"Sending message to chat_id {chat_id}.")
+        logger.info(f"Sending message to chat_id {chat_id}.")
         url = f"{self.api_url}/sendMessage"
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         if reply_markup:
@@ -93,11 +129,11 @@ class TelegramBot:
 
         try:
             response = requests.post(url, json=data)
-            logging.info(f"Response content: {response.content}")
+            logger.info(f"Response content: {response.content}")
             response.raise_for_status()
-            logging.info(f"Message sent to chat_id {chat_id}.")
+            logger.info(f"Message sent to chat_id {chat_id}.")
         except requests.exceptions.RequestException as e:
-            logging.error(f"Error sending message to {chat_id}: {e}")
+            logger.error(f"Error sending message to {chat_id}: {e}")
 
     def send_welcome_message(self, chat_id):
         """Send a welcome message with improved guidance."""
@@ -119,7 +155,7 @@ class TelegramBot:
             # Send message with menu
             self.send_message(chat_id, welcome_text, reply_markup=self.build_menu(chat_id))
         except Exception as e:
-            logging.error(f"Error sending welcome message: {str(e)}")
+            logger.error(f"Error sending welcome message: {str(e)}")
             # Fallback to a simple welcome message
             self.send_message(
                 chat_id,
@@ -129,7 +165,7 @@ class TelegramBot:
 
     def build_menu(self, chat_id):
         """Build a menu with improved UX/UI."""
-        logging.info("Building menu for the bot.")
+        logger.info("Building menu for the bot.")
         
         # Get current settings for display
         origin_name = next((city.value["name"] for city in TrainCity if city.value["value"] == self.origin), self.origin)
@@ -165,7 +201,7 @@ class TelegramBot:
         }
 
     def build_city_keyboard(self, action, chat_id):
-        logging.info(f"Building city keyboard for {action}.")
+        logger.info(f"Building city keyboard for {action}.")
         keyboard = []
         row = []
         for city in TrainCity:
@@ -178,13 +214,13 @@ class TelegramBot:
         return {"inline_keyboard": keyboard}
 
     def build_interval_keyboard(self, chat_id):
-        logging.info("Building interval keyboard.")
+        logger.info("Building interval keyboard.")
         intervals = [5, 7, 10, 14]
         keyboard = [[{"text": f"{days} {self.translate('dates.days', chat_id)}", "callback_data": f"interval:{days}"}] for days in intervals]
         return {"inline_keyboard": keyboard}
 
     def handle_callback_query(self, callback_query):
-        logging.info("Handling callback query.")
+        logger.info("Handling callback query.")
         chat_id = callback_query["message"]["chat"]["id"]
         data = callback_query["data"]
 
@@ -300,7 +336,7 @@ class TelegramBot:
             city_code = data.split(":")[1]
             city_name = next((city.value["name"] for city in TrainCity if city.value["value"] == city_code), city_code)
             self.origin = city_code
-            logging.info(f"Origin set to: {self.origin}")
+            logger.info(f"Origin set to: {self.origin}")
             self.send_message(
                 chat_id,
                 self.translate("cities.origin_set", chat_id, city=city_name, code=city_code),
@@ -310,7 +346,7 @@ class TelegramBot:
             city_code = data.split(":")[1]
             city_name = next((city.value["name"] for city in TrainCity if city.value["value"] == city_code), city_code)
             self.destination = city_code
-            logging.info(f"Destination set to: {self.destination}")
+            logger.info(f"Destination set to: {self.destination}")
             self.send_message(
                 chat_id,
                 self.translate("cities.destination_set", chat_id, city=city_name, code=city_code),
@@ -321,7 +357,7 @@ class TelegramBot:
             today = datetime.today()
             self.start_date = today.strftime("%Y-%m-%d")
             self.end_date = (today + timedelta(days=days)).strftime("%Y-%m-%d")
-            logging.info(f"Date range set from {self.start_date} to {self.end_date} based on {days} days.")
+            logger.info(f"Date range set from {self.start_date} to {self.end_date} based on {days} days.")
             self.send_message(
                 chat_id,
                 self.translate("dates.range_set", chat_id,
@@ -370,7 +406,7 @@ class TelegramBot:
                             valid_items = [item for item in new_items if item.get('seat', 0) > 0]
                             valid_items.sort(key=lambda x: (x['leaveDateTime'], x['priceAdult']))
                             current_items.extend(valid_items)
-                            logging.info(f"Got {len(valid_items)} new items from queue")
+                            logger.info(f"Got {len(valid_items)} new items from queue")
                     except Empty:
                         time.sleep(1)
                         continue
@@ -426,7 +462,7 @@ class TelegramBot:
                             
                             self.send_message(chat_id, message)
                         except Exception as e:
-                            logging.error(f"Error sending message for item {i}: {str(e)}", exc_info=True)
+                            logger.error(f"Error sending message for item {i}: {str(e)}", exc_info=True)
                             continue
 
                     # Add sent items to pending_flights and remove from current_items
@@ -448,31 +484,31 @@ class TelegramBot:
                                 ]}
                             )
                             self.waiting_for_more[chat_id] = True
-                            logging.info(f"Waiting for more click from user {chat_id}")
+                            logger.info(f"Waiting for more click from user {chat_id}")
                         except Exception as e:
-                            logging.error(f"Error sending 'More' button: {str(e)}", exc_info=True)
+                            logger.error(f"Error sending 'More' button: {str(e)}", exc_info=True)
 
             except Exception as e:
-                logging.error(f"Error in notify_user: {str(e)}", exc_info=True)
+                logger.error(f"Error in notify_user: {str(e)}", exc_info=True)
                 time.sleep(1)
 
-        logging.info(f"Notify user thread stopped for chat_id: {chat_id}")
+        logger.info(f"Notify user thread stopped for chat_id: {chat_id}")
 
     def send_next_batch(self, chat_id):
         """Handle user request for next batch of items"""
-        logging.info(f"Processing next batch request from user {chat_id}")
+        logger.info(f"Processing next batch request from user {chat_id}")
         
         # Reset the waiting flag when user clicks More
         self.waiting_for_more[chat_id] = False
-        logging.info(f"Reset waiting flag for user {chat_id}")
+        logger.info(f"Reset waiting flag for user {chat_id}")
 
     def process_messages(self):
-        logging.info("Processing incoming messages and callbacks.")
+        logger.info("Processing incoming messages and callbacks.")
         offset = None
         while True:
             updates = self.get_updates_with_retry(offset)
             for update in updates:
-                logging.info(f"Received update: {update}")
+                logger.info(f"Received update: {update}")
                 offset = update["update_id"] + 1
 
                 if "message" in update:
@@ -482,10 +518,10 @@ class TelegramBot:
                         self.user_languages[str(chat_id)] = 'fa'
                     
                     text = update["message"].get("text", "").strip().lower()
-                    logging.info(f"Processing text: {text}")
+                    logger.info(f"Processing text: {text}")
                     if text.startswith("origin:"):
                         city_input = text.split(":")[1].strip().upper()
-                        logging.info(f"User input for origin: {city_input}")
+                        logger.info(f"User input for origin: {city_input}")
                         # Use fuzzy matching to find the best match
                         best_match = None
                         highest_ratio = 0
@@ -501,7 +537,7 @@ class TelegramBot:
                                 best_match = city
                         if best_match and highest_ratio > 80:  # Use a threshold of 80 for similarity
                             self.origin = best_match.value["value"]
-                            logging.info(f"Origin set to: {self.origin}")
+                            logger.info(f"Origin set to: {self.origin}")
                             self.send_message(
                                 chat_id,
                                 self.translate("cities.origin_set", chat_id, city=best_match.value["name"], code=self.origin),
@@ -515,7 +551,7 @@ class TelegramBot:
                             )
                     elif text.startswith("destination:"):
                         city_input = text.split(":")[1].strip().upper()
-                        logging.info(f"User input for destination: {city_input}")
+                        logger.info(f"User input for destination: {city_input}")
                         # Use fuzzy matching to find the best match
                         best_match = None
                         highest_ratio = 0
@@ -531,7 +567,7 @@ class TelegramBot:
                                 best_match = city
                         if best_match and highest_ratio > 80:  # Use a threshold of 80 for similarity
                             self.destination = best_match.value["value"]
-                            logging.info(f"Destination set to: {self.destination}")
+                            logger.info(f"Destination set to: {self.destination}")
                             self.send_message(
                                 chat_id,
                                 self.translate("cities.destination_set", chat_id, city=best_match.value["name"], code=self.destination),
@@ -548,12 +584,12 @@ class TelegramBot:
                             # Convert Persian numerals to English numerals
                             persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
                             days_str = text.split(":")[1].strip().translate(persian_to_english)
-                            logging.info(f"User input for days: {days_str}")
+                            logger.info(f"User input for days: {days_str}")
                             days = int(days_str)
                             today = datetime.today()
                             self.start_date = today.strftime("%Y-%m-%d")
                             self.end_date = (today + timedelta(days=days)).strftime("%Y-%m-%d")
-                            logging.info(f"Date range set from {self.start_date} to {self.end_date} based on {days} days.")
+                            logger.info(f"Date range set from {self.start_date} to {self.end_date} based on {days} days.")
                             self.send_message(
                                 chat_id,
                                 self.translate("dates.range_set", chat_id,
@@ -563,7 +599,7 @@ class TelegramBot:
                                 reply_markup=self.build_menu(chat_id)
                             )
                         except ValueError:
-                            logging.error("Invalid number of days input.")
+                            logger.error("Invalid number of days input.")
                             self.send_message(
                                 chat_id,
                                 self.translate("dates.invalid_days", chat_id),
@@ -599,5 +635,5 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
     bot = TelegramBot(TELEGRAM_BOT_TOKEN)
-    logging.info("Bot is running...")
+    logger.info("Bot is running...")
     bot.process_messages()
