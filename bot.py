@@ -11,7 +11,6 @@ def test():
     response = requests.get(
         # Remove the hardcoded URL
         'https://api.telegram.org/bot8108600835:AAFcgvv4yd1-rk76qtdAUAgFMynd5vbhUkc/getMe',
-        proxies={"http": None, "https": None},
         timeout=10
     )
 
