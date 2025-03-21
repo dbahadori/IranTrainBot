@@ -1,0 +1,130 @@
+welcome:
+  title: "Welcome to the Train and Flight Information System!"
+  description: "I'll help you find available trains and flights between cities."
+  how_to_use: "How to use:"
+  steps:
+    - "Select origin and destination cities"
+    - "Choose travel dates"
+    - "Start searching for trains or flights"
+
+menu:
+  select_language: "🌐 Please select your preferred language:"
+  language_changed: "✅ Language changed to %{language}"
+  language: "🌐 Language"
+  settings: "Settings"
+  search: "Search"
+  controls: "Controls"
+  from: "From: %{city}"
+  to: "To: %{city}"
+  dates: "Dates: %{range}"
+  find_trains: "Find Trains"
+  find_flights: "Find Flights"
+  stop: "Stop"
+  reset: "Restart"
+  help: "Help"
+  more: "Show More"
+  new_search: "New Search"
+  back: "Back"
+  main_menu: "Main Menu"
+  
+
+
+
+
+cities:
+  select_origin: "🏙️ Select your departure city:"
+  select_destination: "🏙️ Select your arrival city:"
+  origin_set: "🏙️ Departure city set to %{city} (%{code})"
+  destination_set: "🏙️ Arrival city set to %{city} (%{code})"
+  invalid_city: "Invalid city. Please enter a valid city code or name."
+
+dates:
+  select_interval: "📅 How many days would you like to search from today?"
+  range_set: "📅 Date range set: %{start} → %{end} (%{days} days)"
+
+common:
+  arrow: "→"
+
+search:
+  searching_trains: "🚆 Searching for trains from %{origin} %{arrow} %{destination}\n📅 Date range: %{start_date} %{arrow} %{end_date}\n🎛️ Filters:\n- Price: %{price}\n- Time: %{time}\n- Seats: %{seats}\n\nPlease wait while I find the best options..."
+  searching_flights: "✈️ Searching for flights from %{origin} %{arrow} %{destination}\n📅 Date range: %{start_date} %{arrow} %{end_date}\n🎛️ Filters:\n- Price: %{price}\n- Time: %{time}\n- Seats: %{seats}\n\nPlease wait while I find the best options..."
+  stopped: "⏹️ Search stopped. You can start a new search."
+  reset_confirm: "🔄 Would you like to restart the search?"
+  reset_yes: "Yes, restart search"
+  reset_no: "No, continue current search"
+  restarting: "🔄 Restarting search with current settings..."
+  continuing: "✅ Continuing current search."
+  no_more_items: "No more results available."
+  showing_results: "📋 Showing results %{start}-%{end}. Click 'More' to see more results."
+  select_search_type: "Please select a search type:\n🚆 Train Search\n✈️ Flight Search"
+  new_search: "🔄 Starting a new search..."
+  reset_confirm_changed: "Settings have changed. Would you like to restart the search with the new settings?"
+
+results:
+  train:
+    title: "🚆 Train #%{number}"
+    route: "Route: %{origin} %{arrow} %{destination}"
+    date: "Date: %{date}"
+    time: "Time: %{departure} - %{arrival}"
+    train_info: "Train: %{type} #%{number}"
+    seats: "Seats: %{count} available"
+    price: "Price: %{amount} IRR"
+  flight:
+    title: "✈️ Flight #%{number}"
+    route: "Route: %{origin} %{arrow} %{destination}"
+    date: "Date: %{date}"
+    time: "Time: %{departure} - %{arrival}"
+    flight_info: "Airline: %{airline} #%{number}"
+    seats: "Seats: %{count} available"
+    price: "Price: %{amount} IRR"
+
+filters:
+  title: "🎛️ Filter Settings"
+  select_price: "💰 Select Price Limit"
+  select_time: "⏰ Select Time Range"
+  select_seats: "💺 Select Minimum Seats"
+  price_label: "💰 Price: %{value}"
+  time_label: "⏰ Time: %{value}"
+  seats_label: "💺 Seats: %{value}"
+  price_value: "Less than %{amount}M Tomans"
+  seats_value: "≥%{count}"
+  price_set: "Price filter set to: %{amount}"
+  time_set: "Time filter set to: %{period}"
+  seats_set: "Seats filter set to: %{count}"
+  save: "💾 Save and Back"
+  saved: "Filters saved"
+  all: "All"
+  price_1m: "Less than 1M Tomans"
+  price_2m: "Less than 2M Tomans"
+  price_2_5m: "Less than 2.5M Tomans"
+  price_3m: "Less than 3M Tomans"
+  price_3_5m: "Less than 3.5M Tomans"
+  price_4m: "Less than 4M Tomans"
+  price_4_5m: "Less than 4.5M Tomans"
+  price_5m: "Less than 5M Tomans" 
+  time:
+    morning: "Morning (6 AM - 12 PM)"
+    afternoon: "Afternoon (12 PM - 6 PM)"
+    evening: "Evening (6 PM - 12 AM)"
+  seats_1: "≥1"
+  seats_2: "≥2"
+  seats_3: "≥3"
+  seats_4: "≥4"
+  seats_5: "≥5"
+
+help:
+  title: "🔍 Train & Flight Notifier Help"
+  description: "This bot helps you find available trains and flights between cities."
+  main_commands: "Main Commands:"
+  commands:
+    from_to: "🏙️ From/To - Set your departure and arrival cities"
+    dates: "📅 Dates - Set how many days to search"
+    find_trains: "🚆 Find Trains - Search for available trains"
+    find_flights: "✈️ Find Flights - Search for available flights"
+    stop: "⏹️ Stop - Stop the current search"
+    reset: "🔄 Reset - Restart the search"
+  text_commands: "Text Commands:"
+  text_command_list:
+    - "origin:CityName - Set departure city"
+    - "destination:CityName - Set arrival city"
+    - "days:Number - Set search duration" 
